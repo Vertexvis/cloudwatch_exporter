@@ -60,6 +60,7 @@ public class CloudWatchCollector extends Collector {
     }
 
     ActiveConfig activeConfig = new ActiveConfig();
+    LoadBalancerResolver lbResolver;
 
     private static final Counter cloudwatchRequests = Counter.build()
             .labelNames("action", "namespace")
@@ -78,8 +79,9 @@ public class CloudWatchCollector extends Collector {
     }
 
     /* For unittests. */
-    protected CloudWatchCollector(String jsonConfig, AmazonCloudWatchClient client) {
+    protected CloudWatchCollector(String jsonConfig, AmazonCloudWatchClient client, LoadBalancerResolver lbResolver) {
         this((Map<String, Object>)new Yaml().load(jsonConfig), client);
+        this.lbResolver = lbResolver;
     }
 
     private CloudWatchCollector(Map<String, Object> config, AmazonCloudWatchClient client) {
@@ -128,12 +130,19 @@ public class CloudWatchCollector extends Collector {
               "cloudwatch_exporter"
             );
             client = new AmazonCloudWatchClient(credentialsProvider);
+            if (lbResolver == null) {
+                lbResolver = new LoadBalancerResolver(credentialsProvider);
+            }
           } else {
             client = new AmazonCloudWatchClient();
+            if (lbResolver == null) {
+                lbResolver = new LoadBalancerResolver();
+            }
           }
           Region region = RegionUtils.getRegion((String) config.get("region"));
           client.setEndpoint(getMonitoringEndpoint(region));
         }
+
 
         if (!config.containsKey("metrics")) {
           throw new IllegalArgumentException("Must provide metrics");
@@ -388,10 +397,19 @@ public class CloudWatchCollector extends Collector {
           labelValues.add(jobName);
           labelNames.add("instance");
           labelValues.add("");
+
+          String loadBalancerNameInCloudwatch = null;
           for (Dimension d: dimensions) {
-            labelNames.add(safeName(toSnakeCase(d.getName())));
-            labelValues.add(d.getValue());
+              String dimensionName = safeName(toSnakeCase(d.getName()));
+              if (dimensionName.equals("load_balancer")) {
+                  loadBalancerNameInCloudwatch = d.getValue();
+              }
+              labelNames.add(dimensionName);
+              labelValues.add(d.getValue());
           }
+          labelNames.add("project");
+          String loadBalancerName = loadBalancerNameInCloudwatch.split("/")[1];
+          labelValues.add(lbResolver.resolve(loadBalancerName));
 
           Long timestamp = null;
           if (rule.cloudwatchTimestamp) {

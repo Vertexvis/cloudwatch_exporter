@@ -53,6 +53,11 @@
       <artifactId>aws-java-sdk-sts</artifactId>
       <version>1.11.86</version>
     </dependency>
+    <dependency>
+      <groupId>com.amazonaws</groupId>
+      <artifactId>aws-java-sdk-elasticloadbalancingv2</artifactId>
+      <version>1.11.86</version>
+    </dependency>
     <!--
       Older versions of jackson-databind have remote code execution vulnerabilities
       CVEs - 2018-5968, 2017-17485, 2017-7525, 2017-15095, 2018-7489
@@ -107,8 +112,8 @@
         <artifactId>maven-compiler-plugin</artifactId>
         <version>2.3.2</version>
         <configuration>
-          <source>1.6</source>
-          <target>1.6</target>
+          <source>1.8</source>
+          <target>1.8</target>
         </configuration>
       </plugin>
       <!-- Build a full jar with dependencies -->
