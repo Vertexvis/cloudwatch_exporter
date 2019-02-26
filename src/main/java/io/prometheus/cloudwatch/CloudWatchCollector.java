@@ -387,9 +387,9 @@ public class CloudWatchCollector extends Collector {
           for (Resolver r: resolvers) {
               int labelIndex = labelNames.indexOf(r.fromLabel());
               if (labelIndex > -1) {
-                  String loadBalancerName = r.resourceFromCloudwatchDimension(labelValues.get(labelIndex));
+                  String resourceName = r.resourceFromCloudwatchDimension(labelValues.get(labelIndex));
                   labelNames.add(r.newLabel());
-                  labelValues.add(r.resolve(loadBalancerName));
+                  labelValues.add(r.resolve(resourceName));
               }
           }
 
