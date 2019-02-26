@@ -16,9 +16,7 @@ if [ "$SKIP_PUBLISH" != "true" ]; then
         LOG "Not publishing locally, use ${SERVICE_NAME}:${LOCAL_TAG}"
 	docker tag ${SERVICE_NAME}:${GIT_COMMIT_SHORT} ${SERVICE_NAME}:${LOCAL_TAG}
     else
-        . ./scripts/version.sh
 
-        tagAndPush ${VERSION}
         tagAndPush ${GIT_COMMIT_SHORT}
         if [ "$BRANCH_NAME" = "master" ]; then
             tagAndPush latest
