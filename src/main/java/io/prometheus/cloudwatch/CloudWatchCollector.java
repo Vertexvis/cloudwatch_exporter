@@ -1,8 +1,6 @@
 package io.prometheus.cloudwatch;
 
-import com.amazonaws.auth.STSAssumeRoleSessionCredentialsProvider;
 import com.amazonaws.regions.Region;
-import com.amazonaws.regions.RegionUtils;
 import com.amazonaws.services.cloudwatch.AmazonCloudWatchClient;
 import com.amazonaws.services.cloudwatch.model.Datapoint;
 import com.amazonaws.services.cloudwatch.model.Dimension;
@@ -14,25 +12,19 @@ import com.amazonaws.services.cloudwatch.model.ListMetricsResult;
 import com.amazonaws.services.cloudwatch.model.Metric;
 import io.prometheus.client.Collector;
 import io.prometheus.client.Counter;
-
 import java.io.FileReader;
 import java.io.Reader;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Date;
-import java.util.List;
-import java.util.Set;
-import java.util.Map;
-import java.util.HashMap;
+import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
-
 import org.yaml.snakeyaml.Yaml;
+
 
 public class CloudWatchCollector extends Collector {
     private static final Logger LOGGER = Logger.getLogger(CloudWatchCollector.class.getName());
+    private List<Resolver> resolvers;
 
     static class ActiveConfig implements Cloneable {
         ArrayList<MetricRule> rules;
@@ -60,7 +52,6 @@ public class CloudWatchCollector extends Collector {
     }
 
     ActiveConfig activeConfig = new ActiveConfig();
-    LoadBalancerResolver lbResolver;
 
     private static final Counter cloudwatchRequests = Counter.build()
             .labelNames("action", "namespace")
@@ -79,9 +70,8 @@ public class CloudWatchCollector extends Collector {
     }
 
     /* For unittests. */
-    protected CloudWatchCollector(String jsonConfig, AmazonCloudWatchClient client, LoadBalancerResolver lbResolver) {
+    protected CloudWatchCollector(String jsonConfig, AmazonCloudWatchClient client) {
         this((Map<String, Object>)new Yaml().load(jsonConfig), client);
-        this.lbResolver = lbResolver;
     }
 
     private CloudWatchCollector(Map<String, Object> config, AmazonCloudWatchClient client) {
@@ -98,6 +88,7 @@ public class CloudWatchCollector extends Collector {
         loadConfig((Map<String, Object>)new Yaml().load(in), client);
     }
     private void loadConfig(Map<String, Object> config, AmazonCloudWatchClient client) {
+        ClientBuilder clientBuilder = new ClientBuilder(config);
         if(config == null) {  // Yaml config empty, set config to empty map.
             config = new HashMap<String, Object>();
         }
@@ -124,25 +115,14 @@ public class CloudWatchCollector extends Collector {
         }
 
         if (client == null) {
-          if (config.containsKey("role_arn")) {
-            STSAssumeRoleSessionCredentialsProvider credentialsProvider = new STSAssumeRoleSessionCredentialsProvider(
-              (String) config.get("role_arn"),
-              "cloudwatch_exporter"
-            );
-            client = new AmazonCloudWatchClient(credentialsProvider);
-            if (lbResolver == null) {
-                lbResolver = new LoadBalancerResolver(credentialsProvider);
-            }
-          } else {
-            client = new AmazonCloudWatchClient();
-            if (lbResolver == null) {
-                lbResolver = new LoadBalancerResolver();
-            }
-          }
-          Region region = RegionUtils.getRegion((String) config.get("region"));
-          client.setEndpoint(getMonitoringEndpoint(region));
+          client = clientBuilder.getCloudwatchClient();
         }
 
+        if (resolvers == null) {
+            resolvers = new ArrayList<>(Collections.singletonList(
+                new LoadBalancerResolver(clientBuilder)
+            ));
+        }
 
         if (!config.containsKey("metrics")) {
           throw new IllegalArgumentException("Must provide metrics");
@@ -398,18 +378,20 @@ public class CloudWatchCollector extends Collector {
           labelNames.add("instance");
           labelValues.add("");
 
-          String loadBalancerNameInCloudwatch = null;
           for (Dimension d: dimensions) {
               String dimensionName = safeName(toSnakeCase(d.getName()));
-              if (dimensionName.equals("load_balancer")) {
-                  loadBalancerNameInCloudwatch = d.getValue();
-              }
               labelNames.add(dimensionName);
               labelValues.add(d.getValue());
           }
-          labelNames.add("project");
-          String loadBalancerName = loadBalancerNameInCloudwatch.split("/")[1];
-          labelValues.add(lbResolver.resolve(loadBalancerName));
+
+          for (Resolver r: resolvers) {
+              int labelIndex = labelNames.indexOf(r.fromLabel());
+              if (labelIndex > -1) {
+                  String loadBalancerName = r.resourceFromCloudwatchDimension(labelValues.get(labelIndex));
+                  labelNames.add(r.newLabel());
+                  labelValues.add(r.resolve(loadBalancerName));
+              }
+          }
 
           Long timestamp = null;
           if (rule.cloudwatchTimestamp) {

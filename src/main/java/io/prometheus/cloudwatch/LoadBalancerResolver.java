@@ -1,7 +1,5 @@
 package io.prometheus.cloudwatch;
-import com.amazonaws.auth.AWSCredentialsProvider;
 import com.amazonaws.services.elasticloadbalancingv2.AmazonElasticLoadBalancing;
-import com.amazonaws.services.elasticloadbalancingv2.AmazonElasticLoadBalancingClientBuilder;
 import com.amazonaws.services.elasticloadbalancingv2.model.*;
 import java.util.HashMap;
 import java.util.List;
@@ -11,16 +9,26 @@ import java.util.stream.Collectors;
 
 public class LoadBalancerResolver implements Resolver {
     private static final Logger LOGGER = Logger.getLogger(LoadBalancerResolver.class.getName());
-    private AmazonElasticLoadBalancingClientBuilder builder = AmazonElasticLoadBalancingClientBuilder.standard();
     private AmazonElasticLoadBalancing client;
     private Map<String, String> loadBalancerDetails = new HashMap<>();
 
-    LoadBalancerResolver() {
-        this.client = this.builder.build();
+    LoadBalancerResolver(ClientBuilder clientBuilder) {
+        this.client = clientBuilder.getLoadBalancingClient();
     }
 
-    LoadBalancerResolver(AWSCredentialsProvider credentialsProvider) {
-        this.client = this.builder.withCredentials(credentialsProvider).build();
+    @Override
+    public String fromLabel() {
+        return "load_balancer";
+    }
+
+    @Override
+    public String newLabel() {
+        return "project";
+    }
+
+    @Override
+    public String resourceFromCloudwatchDimension(String dimension) {
+        return dimension.split("/")[1];
     }
 
     @Override
